@@ -41,48 +41,6 @@ media_types = ['Blu-ray', 'HD-DVD', 'HDTV', 'WEB-DL', 'WEBRip', 'DTheater', 'XDC
 codecs = ['x264', 'VC-1 Remux', 'h.264 Remux', 'MPEG2 Remux', 'h.265 Remux', 'x265']
 
 
-def preprocessing(path, arguments):
-    assert Path(path).exists()
-    assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
-    assert arguments['--type'] in types
-
-    if arguments['--codec'] == 'AUTO-DETECT':
-        arguments['--codec'] = autodetect_codec(path)
-    assert arguments['--codec'] in codecs
-
-    if arguments['--group'] == 'AUTO-DETECT':
-        arguments['--group'] = autodetect_group(path)
-
-    if arguments['--media_type'] == 'AUTO-DETECT':
-        arguments['--media_type'] = autodetect_media_type(path)
-    assert arguments['--media_type'] in media_types
-
-
-def create_torrent(path, passkey):
-    announce_url = "http://moose.awesome-hd.me/{}/announce".format(passkey)
-    torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(Path(path).stem))
-    if torrent_path.exists():
-        torrent_path.unlink()
-    subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path],
-                   capture_output=True, bufsize=0)
-    return torrent_path
-
-
-def get_mediainfo(path):
-    if Path(path).is_dir():
-        path = next(Path(path).glob('*/')).as_posix()
-    return subprocess.check_output(['mediainfo', path])
-
-
-def get_release_desc(path, passkey):
-    if Path(path).is_dir():
-        path = next(Path(path).glob('*/')).as_posix()
-    script_output = subprocess.check_output(
-        ['/opt/anaconda/bin/python', 'aimguploader.py', '-k', passkey, '-n', '4', path],
-        bufsize=0)
-    return str(script_output).split('BBCode:\\n\\n')[1].split('Done!')[0]
-
-
 def autodetect_media_type(path):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
@@ -108,7 +66,61 @@ def autodetect_codec(path):
 def autodetect_group(path):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
-    return '-'.join(Path(path).stem.split('-')[1:])
+    return Path(path).stem.split('-')[-1]
+
+
+def preprocessing(path, arguments):
+    assert Path(path).exists()
+    assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
+    assert arguments['--type'] in types
+
+    if arguments['--codec'] == 'AUTO-DETECT':
+        arguments['--codec'] = autodetect_codec(path)
+    assert arguments['--codec'] in codecs
+
+    if arguments['--group'] == 'AUTO-DETECT':
+        arguments['--group'] = autodetect_group(path)
+
+    if arguments['--media_type'] == 'AUTO-DETECT':
+        arguments['--media_type'] = autodetect_media_type(path)
+    assert arguments['--media_type'] in media_types
+
+    if arguments['--media_type'] == 'WEB-DL':
+        if arguments['--codec'] == 'x264':
+            arguments['--codec'] = 'h.264 Remux'
+        if arguments['--codec'] == 'x265':
+            arguments['--codec'] = 'h.265 Remux'
+
+    if 'AMZN' in Path(path).name:
+        arguments['--special-edition'] = 'Amazon'
+
+    if 'Netflix' or '.NF.' in Path(path).name:
+        arguments['--special-edition'] = 'Netflix'
+
+
+def create_torrent(path, passkey):
+    announce_url = "http://moose.awesome-hd.me/{}/announce".format(passkey)
+    torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(Path(path).stem))
+    if torrent_path.exists():
+        torrent_path.unlink()
+    subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path],
+                   capture_output=True, bufsize=0)
+    return torrent_path
+
+
+def get_mediainfo(path):
+    if Path(path).is_dir():
+        path = next(Path(path).glob('*/')).as_posix()
+    return subprocess.check_output(['mediainfo', path])
+
+
+def get_release_desc(path, passkey):
+    if Path(path).is_dir():
+        path = next(Path(path).glob('*/')).as_posix()
+    script_output = subprocess.check_output(
+        ['/opt/anaconda/bin/python', 'aimguploader.py', '-k', passkey, '-n', '4', path],
+        bufsize=0)
+    return str(script_output).split('BBCode:\\n\\n')[1].split('Done!')[0]
 
 
 def create_upload_form(arguments):
