@@ -158,4 +158,4 @@ def upload_form(arguments, form):
 
 if __name__ == '__main__':
     arguments = docopt(__doc__, version='AHD uploader 0.1')
-    print(create_upload_form(arguments))
+    print(upload_form(arguments, create_upload_form(arguments)))
