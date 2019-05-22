@@ -150,7 +150,7 @@ def create_torrent(path, passkey):
     p = subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True, bufsize=0)
     print(path)
-    print(" ".join(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path]))
+    print(" ".join(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', str(torrent_path), str(path)]))
     if p.returncode != 0:
         raise RuntimeError("Error creating torrent: {}".format(p.stdout))
     return torrent_path
