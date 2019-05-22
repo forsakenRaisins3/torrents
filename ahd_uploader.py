@@ -9,9 +9,13 @@ including mediainfo and screenshots. Basic functionality for automatically detec
 representing a completed upload form. Advanced users may inspect and/or edit this form, but such functionality is not
 currently provided.
 
-Upon finishing the preparation, the form may be uploaded. Uploading requires a cookies file, as logging in on your
-behalf is made difficult by a captcha. The cookies file is expected to be in the standard Netscape format
-(as used by wget, curl, etc.)and may be extracted from your browser using various extensions.
+Upon finishing the preparation, the form may be uploaded. Uploading currently requires a cookies file, as logging in on
+your behalf is made difficult by a captcha. The cookies file is expected to be in the standard Netscape format
+(as used by wget, curl, etc.) and may be extracted from your browser using various extensions.
+If uploading is successful, the command returns a URL to the media page.
+
+The author of this script is not a member of staff and provides no guarantee that usage of the script will not lead
+to violation of site rules either directly or indirectly.
 
 Usage:
     ahd_uploader.py (-h | --help)
@@ -19,6 +23,7 @@ Usage:
     ahd_uploader.py prepare <media> <output_form> --imdb=<imdb> --passkey=<passkey>
         [--media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
         [--user-release --special-edition=<edition_information>]
+        [--num-screens=<num_screens>]
 
 Options:
   -h --help     Show this screen.
@@ -45,6 +50,8 @@ Options:
                                             Current AHD recommendation is not to set this for TV-Shows
                                             (https://awesome-hd.me/wiki.php?action=article&id=30).
 
+  --num-screens=<num_screens>   Number of screenshots to upload and include in description [default: 4]
+
 """
 
 import http.cookiejar
@@ -52,6 +59,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import pickle
+import shutil
 
 import requests
 from docopt import docopt
@@ -127,30 +135,74 @@ def preprocessing(path, arguments):
     assert arguments['--codec'] in codecs
     assert arguments['--media-type'] in media_types
 
+    assert int(arguments['--num-screens'])
+    arguments['--num-screens'] = int(arguments['--num-screens'])
+
 
 def create_torrent(path, passkey):
     announce_url = "http://moose.awesome-hd.me/{}/announce".format(passkey)
-    torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(Path(path).stem))
+    torrent_name = Path(path).stem
+    if Path(path).is_dir():
+        torrent_name = Path(path).name
+    torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(torrent_name))
     if torrent_path.exists():
         torrent_path.unlink()
     subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path],
-                   capture_output=True, bufsize=0)
+                   capture_output=True, shell=True, bufsize=0)
     return torrent_path
 
 
 def get_mediainfo(path):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
-    return subprocess.check_output(['mediainfo', path])
+    return subprocess.check_output(['mediainfo', path], shell=True)
 
 
-def get_release_desc(path, passkey):
+def get_duration(file):
+    args = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
+            file]
+    p = subprocess.run(args, shell=True, stdout=subprocess.PIPE)
+    if p.returncode == 127:
+        raise ValueError('ffprobe is not installed or not in path.')
+    if p.returncode != 0:
+        return RuntimeError('Error occurred while running ffprobe.')
+    return float(p.stdout.decode('utf-8'))
+
+
+def take_screenshot(file, offset_secs, output_dir):
+    screenshot_path = Path(output_dir) / ("{}_{}.png".format(Path(file).stem, offset_secs))
+    p = subprocess.run(['ffmpeg', '-ss', str(offset_secs), '-i', str(file), '-vframes', '1', str(screenshot_path)],
+                       shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if p.returncode == 127:
+        raise ValueError('ffmpeg is not installed or not in path.')
+    if p.returncode != 0:
+        return RuntimeError('Error occurred while running ffmpeg.')
+    return screenshot_path
+
+
+def take_screenshots(file, num_screens):
+    duration = float(int(get_duration(file)))
+    output_dir = Path(tempfile.gettempdir()) / ("{}_screens".format(Path(file).name))
+    if output_dir.exists():
+        shutil.rmtree(output_dir.resolve())
+    Path.mkdir(output_dir)
+    offsets = [int(1 / (num_screens + 1) * o * duration) for o in range(1, num_screens + 1)]
+    return [take_screenshot(file, offset, output_dir) for offset in offsets]
+
+
+def upload_screenshots(gallery_title, files, key):
+    data_payload = {'apikey': key, 'galleryid': 'new', 'gallerytitle': gallery_title}
+    files_payload = [('image[]', (Path(f).name, open(f, 'rb'))) for f in files]
+    return requests.post('https://img.awesome-hd.me/api/upload', data=data_payload, files=files_payload).json()
+
+
+def get_release_desc(path, passkey, num_screens):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
-    script_output = subprocess.check_output(
-        ['/opt/anaconda/bin/python', 'aimguploader.py', '-k', passkey, '-n', '4', path],
-        bufsize=0)
-    return str(script_output).split('BBCode:\\n\\n')[1].split('Done!')[0]
+    js = upload_screenshots(Path(path).name, take_screenshots(path, num_screens), passkey)
+    if 'files' not in js:
+        ValueError('Error uploading screenshots.')
+    return "".join([f['bbcode'] for f in js['files']])
 
 
 def create_upload_form(arguments):
@@ -173,7 +225,7 @@ def create_upload_form(arguments):
             'othereditions': (None, ""),
             'media': (None, arguments['--media-type']),
             'encoder': (None, arguments['--codec']),
-            'release_desc': (None, get_release_desc(path, passkey))}
+            'release_desc': (None, get_release_desc(path, passkey, arguments['--num-screens']))}
     if arguments['--group'] == 'UNKNOWN':
         form['unknown_group'] = (None, 'on')
         form['group'] = (None, '')
@@ -198,6 +250,9 @@ def upload_command(arguments):
     if r.status_code == 200:
         if arguments['--delete-upon-success']:
             Path.unlink(arguments['<input_form>'])
+    else:
+        raise RuntimeError("Something went wrong while uploading! It's recommended to check AHD to verify that you"
+                           "haven't uploaded a malformed or incorrect torrent.")
     return r.url
 
 
