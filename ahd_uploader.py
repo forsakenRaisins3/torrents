@@ -5,7 +5,7 @@ Usage generally follows two steps: the preparation of an upload form, and subseq
 
 Preparation involves the creation of a torrent and the filling out of the associated information in AHD's upload form,
 including mediainfo and screenshots. Basic functionality for automatically detecting some other info
-(group, codec, etc.) is provided but not highly recommended. The result of this step is a serialized Python dictionary
+(group, codec, etc.) is provided but not recommended. The result of this step is a serialized Python dictionary
 representing a completed upload form. Advanced users may inspect and/or edit this form, but such functionality is not
 currently provided.
 
