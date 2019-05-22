@@ -1,29 +1,48 @@
-"""Uploads media as torrent to AHD
+"""NOTE: READ DOCUMENTATION BEFORE USAGE.
+
+CLI uploader for AHD.
+Usage generally follows two steps: the preparation of an upload form, and subsequently its upload to AHD.
+
+Preparation involves the creation of a torrent and the filling out of the associated information in AHD's upload form,
+including mediainfo and screenshots. Basic functionality for automatically detecting some other info
+(group, codec, etc.) is provided but not highly recommended. The result of this step is a serialized Python dictionary
+representing a completed upload form. Advanced users may inspect and/or edit this form, but such functionality is not
+currently provided.
+
+Upon finishing the preparation, the form may be uploaded. Uploading requires a cookies file, as logging in on your
+behalf is made difficult by a captcha. The cookies file is expected to be in the standard Netscape format
+(as used by wget, curl, etc.)and may be extracted from your browser using various extensions.
 
 Usage:
     ahd_uploader.py (-h | --help)
-    ahd_uploader.py <path> --imdb=<imdb> --cookies=<cookie_file> --passkey=<passkey>
-        [--media_type=<media_type> --type=<type> --group=<group> --codec=<codec>]
-        [--user_release --special_edition=<edition_information>]
+    ahd_uploader.py upload <input_form> --cookies=<cookie_file>
+    ahd_uploader.py prepare <media> <output_form> --imdb=<imdb> --passkey=<passkey>
+        [--media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
+        [--user-release --special-edition=<edition_information>]
 
 Options:
   -h --help     Show this screen.
 
-  <path>    Path to file or directory to create a torrent out of.
+  <input_form>     Path to previously prepared upload_form to upload.
+  --cookies=<cookie_file>   Path to file containing cookies in the standard Netscape format, used to log in to AHD.
+
+  <media>    Path to file or directory to create a torrent out of.
+  <output_form>    Path to save the resulting serialized upload form, which may then be uploaded.
   --imdb=<imdb>    IMDb ID, not the full link. Example IMDb ID: tt0113243.
-  --cookies=<cookie_file>   Path to text file containing cookies used to log in to AHD.
   --passkey=<passkey>   Your AHD passkey (which is the same as your AIMG API key).
 
   --type=<type>  Type of content, must be one of Movies, TV-Shows [default: AUTO-DETECT].
-  --media_type=<media_type>  Type of media source, must be one of
+  --media-type=<media_type>  Type of media source, must be one of
                              Blu-ray, HD-DVD, HDTV, WEB-DL, WEBRip, DTheater, XDCAM, UHD Blu-ray
                             [default: AUTO-DETECT].
   --codec=<codec>   Codec, must be one of
                     x264, VC-1 Remux, h.264 Remux, MPEG2 Remux, h.265 Remux, x265 [default: AUTO-DETECT].
   --group=<group>   Release group. Specify UNKNOWN for unknown group [default: AUTO-DETECT].
 
-  --user_release    Indicates a user release.
-  --special_edition=<edition_information>   If there is any edition information, this is the name of the edition.
+  --user-release    Indicates a user release.
+  --special-edition=<edition_information>   If there is any edition information, this is the name of the edition.
+                                            Current AHD recommendation is not to set this for TV-Shows
+                                            (https://awesome-hd.me/wiki.php?action=article&id=30).
 
 """
 
@@ -31,6 +50,7 @@ import http.cookiejar
 import subprocess
 import tempfile
 from pathlib import Path
+import pickle
 
 import requests
 from docopt import docopt
@@ -77,25 +97,26 @@ def autodetect_group(path):
 
 def preprocessing(path, arguments):
     assert Path(path).exists()
-    assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
+
+    if arguments['prepare']:
+        assert Path(arguments['<output_form>']).exists() and not Path(arguments['<output_form>']).is_dir()
 
     if arguments['--type'] == 'AUTO-DETECT':
         arguments['--type'] = autodetect_type(path)
 
-    if arguments['--codec'] == 'AUTO-DETECT':
-        arguments['--codec'] = autodetect_codec(path)
-
     if arguments['--group'] == 'AUTO-DETECT':
         arguments['--group'] = autodetect_group(path)
 
-    if arguments['--media_type'] == 'AUTO-DETECT':
-        arguments['--media_type'] = autodetect_media_type(path)
+    if arguments['--media-type'] == 'AUTO-DETECT':
+        arguments['--media-type'] = autodetect_media_type(path)
 
-    if arguments['--media_type'] == 'WEB-DL':
-        if arguments['--codec'] == 'x264' or 'H.264' in Path(path).name:
-            arguments['--codec'] = 'h.264 Remux'
-        if arguments['--codec'] == 'x265' or 'H.265' in Path(path).name:
-            arguments['--codec'] = 'h.265 Remux'
+    if arguments['--codec'] == 'AUTO-DETECT':
+        arguments['--codec'] = autodetect_codec(path)
+        if arguments['--media-type'] == 'WEB-DL':
+            if arguments['--codec'] == 'x264' or 'H.264' in Path(path).name:
+                arguments['--codec'] = 'h.264 Remux'
+            if arguments['--codec'] == 'x265' or 'H.265' in Path(path).name:
+                arguments['--codec'] = 'h.265 Remux'
 
     if 'AMZN' in Path(path).name:
         arguments['--special-edition'] = 'Amazon'
@@ -105,7 +126,7 @@ def preprocessing(path, arguments):
 
     assert arguments['--type'] in types
     assert arguments['--codec'] in codecs
-    assert arguments['--media_type'] in media_types
+    assert arguments['--media-type'] in media_types
 
 
 def create_torrent(path, passkey):
@@ -134,7 +155,7 @@ def get_release_desc(path, passkey):
 
 
 def create_upload_form(arguments):
-    path = arguments['<path>']
+    path = arguments['<media>']
     passkey = arguments['--passkey']
 
     preprocessing(path, arguments)
@@ -149,13 +170,13 @@ def create_upload_form(arguments):
             'group': (None, arguments['--group']),
             'remaster_title': (None, "Director's Cut"),
             'othereditions': (None, ""),
-            'media': (None, arguments['--media_type']),
+            'media': (None, arguments['--media-type']),
             'encoder': (None, arguments['--codec']),
             'release_desc': (None, get_release_desc(path, passkey))}
     if arguments['--group'] == 'UNKNOWN':
         form['unknown_group'] = (None, 'on')
         form['group'] = (None, '')
-    if arguments['--user_release']:
+    if arguments['--user-release']:
         form['user'] = (None, 'on')
     if arguments['--special_edition']:
         form['remaster'] = (None, 'on')
@@ -163,6 +184,7 @@ def create_upload_form(arguments):
         if arguments['--special_edition'] not in known_editions:
             form['unknown'] = (None, 'on')
 
+    pickle.dump(form, open(arguments['<output_form>'], 'wb'))
     return form
 
 
@@ -171,13 +193,16 @@ def upload_form(arguments, form):
     cj.load()
     r = requests.post("https://awesome-hd.me/upload.php",
                       cookies=requests.utils.dict_from_cookiejar(cj),
-                      # proxies={"http": "http://127.0.0.1:8888", "https": "http://127.0.0.1:8888"},
-                      # verify=False,
                       files=form)
     if r.status_code == 200:
         return r.url
 
 
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='AHD uploader 0.1')
-    print(upload_form(arguments, create_upload_form(arguments)))
+    arguments = docopt(__doc__, version='CLI AHD Uploader 1.0')
+    if arguments['prepare']:
+        print(create_upload_form(arguments))
+    if arguments['upload']:
+        assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
+        assert Path(arguments['<input_form>']).exists() and not Path(arguments['<input_form>']).is_dir()
+        print(upload_form(arguments, pickle.load(open(arguments['<input_form>'], 'rb'))))
