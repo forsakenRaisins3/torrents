@@ -212,6 +212,6 @@ def upload_form(arguments, form):
 if __name__ == '__main__':
     arguments = docopt(__doc__, version='CLI AHD Uploader 1.0')
     if arguments['prepare']:
-        print(create_upload_form(arguments))
+        create_upload_form(arguments)
     if arguments['upload']:
         print(upload_command(arguments))
