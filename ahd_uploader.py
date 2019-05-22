@@ -148,9 +148,7 @@ def create_torrent(path, passkey):
     if torrent_path.exists():
         torrent_path.unlink()
     p = subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', str(torrent_path), str(path)],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False)
-    print(path)
-    print(" ".join(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', str(torrent_path), str(path)]))
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if p.returncode != 0:
         raise RuntimeError("Error creating torrent: {}".format(p.stdout))
     return torrent_path
@@ -159,13 +157,13 @@ def create_torrent(path, passkey):
 def get_mediainfo(path):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
-    return subprocess.check_output(['mediainfo', path], shell=True)
+    return subprocess.check_output(['mediainfo', path])
 
 
 def get_duration(file):
     args = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
             file]
-    p = subprocess.run(args, shell=True, stdout=subprocess.PIPE)
+    p = subprocess.run(args, stdout=subprocess.PIPE)
     if p.returncode == 127:
         raise ValueError('ffprobe is not installed or not in path.')
     if p.returncode != 0:
@@ -176,7 +174,7 @@ def get_duration(file):
 def take_screenshot(file, offset_secs, output_dir):
     screenshot_path = Path(output_dir) / ("{}_{}.png".format(Path(file).stem, offset_secs))
     p = subprocess.run(['ffmpeg', '-ss', str(offset_secs), '-i', str(file), '-vframes', '1', str(screenshot_path)],
-                       shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if p.returncode == 127:
         raise ValueError('ffmpeg is not installed or not in path.')
     if p.returncode != 0:
