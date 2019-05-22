@@ -158,7 +158,7 @@ def create_upload_form(arguments):
     preprocessing(path, arguments)
 
     form = {'submit': (None, 'true'),
-            'file_input': open(create_torrent(path, passkey), 'rb'),
+            'file_input': (Path(path.name), open(create_torrent(path, passkey), 'rb').read()),
             'nfo_input': (None, ""),
             'type': (None, arguments['--type']),
             'imdblink': (None, arguments['--imdb']),
