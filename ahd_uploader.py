@@ -175,10 +175,10 @@ def create_upload_form(arguments):
         form['group'] = (None, '')
     if arguments['--user-release']:
         form['user'] = (None, 'on')
-    if arguments['--special_edition']:
+    if arguments['--special-edition']:
         form['remaster'] = (None, 'on')
-        form['remaster_title'] = (None, arguments['--special_edition'])
-        if arguments['--special_edition'] not in known_editions:
+        form['remaster_title'] = (None, arguments['--special-edition'])
+        if arguments['--special-edition'] not in known_editions:
             form['unknown'] = (None, 'on')
 
     pickle.dump(form, open(arguments['<output_form>'], 'wb'))
