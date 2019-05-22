@@ -121,7 +121,7 @@ def preprocessing(path, arguments):
         if arguments['--media-type'] == 'WEB-DL':
             if arguments['--codec'] == 'x264' or 'H.264' in Path(path).name:
                 arguments['--codec'] = 'h.264 Remux'
-            if arguments['--codec'] == 'x265' or 'H.265' in Path(path).name:
+            if arguments['--codec'] == 'x265' or 'H.265' in Path(path).name or 'HEVC' in Path(path).name:
                 arguments['--codec'] = 'h.265 Remux'
 
     if arguments['--type'] == 'Movies':
