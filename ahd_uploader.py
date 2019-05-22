@@ -66,7 +66,7 @@ def autodetect_codec(path):
     for c in codecs:
         if c in Path(path).name:
             return c
-    raise RuntimeError("Unable to detect codec")
+    return ""
 
 
 def autodetect_group(path):
@@ -81,18 +81,15 @@ def preprocessing(path, arguments):
 
     if arguments['--type'] == 'AUTO-DETECT':
         arguments['--type'] = autodetect_type(path)
-    assert arguments['--type'] in types
 
     if arguments['--codec'] == 'AUTO-DETECT':
         arguments['--codec'] = autodetect_codec(path)
-    assert arguments['--codec'] in codecs
 
     if arguments['--group'] == 'AUTO-DETECT':
         arguments['--group'] = autodetect_group(path)
 
     if arguments['--media_type'] == 'AUTO-DETECT':
         arguments['--media_type'] = autodetect_media_type(path)
-    assert arguments['--media_type'] in media_types
 
     if arguments['--media_type'] == 'WEB-DL':
         if arguments['--codec'] == 'x264' or 'H.264' in Path(path).name:
@@ -105,6 +102,10 @@ def preprocessing(path, arguments):
 
     if 'Netflix' or '.NF.' in Path(path).name:
         arguments['--special-edition'] = 'Netflix'
+
+    assert arguments['--type'] in types
+    assert arguments['--codec'] in codecs
+    assert arguments['--media_type'] in media_types
 
 
 def create_torrent(path, passkey):
