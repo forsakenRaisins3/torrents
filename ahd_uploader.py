@@ -14,7 +14,7 @@ Options:
   --cookies=<cookie_file>   Path to text file containing cookies used to log in to AHD.
   --passkey=<passkey>   Your AHD passkey (which is the same as your AIMG API key).
 
-  --type=<type>  Type of content, must be one of Movies, TV-Shows [default: Movies].
+  --type=<type>  Type of content, must be one of Movies, TV-Shows [default: AUTO-DETECT].
   --media_type=<media_type>  Type of media source, must be one of
                              Blu-ray, HD-DVD, HDTV, WEB-DL, WEBRip, DTheater, XDCAM, UHD Blu-ray
                             [default: AUTO-DETECT].
@@ -39,6 +39,12 @@ known_editions = ["Director's Cut", "Unrated", "Extended Edition", "2 in 1", "Th
 types = ['Movies', 'TV-Shows']
 media_types = ['Blu-ray', 'HD-DVD', 'HDTV', 'WEB-DL', 'WEBRip', 'DTheater', 'XDCAM', 'UHD Blu-ray']
 codecs = ['x264', 'VC-1 Remux', 'h.264 Remux', 'MPEG2 Remux', 'h.265 Remux', 'x265']
+
+
+def autodetect_type(path):
+    if '.S0' in Path(path).name:
+        return 'TV-Shows'
+    return 'Movies'
 
 
 def autodetect_media_type(path):
@@ -72,6 +78,9 @@ def autodetect_group(path):
 def preprocessing(path, arguments):
     assert Path(path).exists()
     assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
+
+    if arguments['--type'] == 'AUTO-DETECT':
+        arguments['--type'] = autodetect_type(path)
     assert arguments['--type'] in types
 
     if arguments['--codec'] == 'AUTO-DETECT':
@@ -86,9 +95,9 @@ def preprocessing(path, arguments):
     assert arguments['--media_type'] in media_types
 
     if arguments['--media_type'] == 'WEB-DL':
-        if arguments['--codec'] == 'x264':
+        if arguments['--codec'] == 'x264' or 'H.264' in Path(path).name:
             arguments['--codec'] = 'h.264 Remux'
-        if arguments['--codec'] == 'x265':
+        if arguments['--codec'] == 'x265' or 'H.265' in Path(path).name:
             arguments['--codec'] = 'h.265 Remux'
 
     if 'AMZN' in Path(path).name:
