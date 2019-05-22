@@ -147,9 +147,9 @@ def create_torrent(path, passkey):
     torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(torrent_name))
     if torrent_path.exists():
         torrent_path.unlink()
-    subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path],
-                   capture_output=True, shell=True, bufsize=0)
-    print('blah')
+    p = subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', torrent_path, path],
+                       capture_output=True, shell=True, bufsize=0)
+    print(p.returncode)
     return torrent_path
 
 
