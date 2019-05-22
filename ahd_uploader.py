@@ -15,7 +15,7 @@ behalf is made difficult by a captcha. The cookies file is expected to be in the
 
 Usage:
     ahd_uploader.py (-h | --help)
-    ahd_uploader.py upload <input_form> --cookies=<cookie_file>
+    ahd_uploader.py upload <input_form> --cookies=<cookie_file> --delete-on-success
     ahd_uploader.py prepare <media> <output_form> --imdb=<imdb> --passkey=<passkey>
         [--media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
         [--user-release --special-edition=<edition_information>]
@@ -25,6 +25,7 @@ Options:
 
   <input_form>     Path to previously prepared upload_form to upload.
   --cookies=<cookie_file>   Path to file containing cookies in the standard Netscape format, used to log in to AHD.
+  --delete-on-success   If set, will delete the form file if uploading is succcessful.
 
   <media>    Path to file or directory to create a torrent out of.
   <output_form>    Path to save the resulting serialized upload form, which may then be uploaded.
@@ -115,11 +116,12 @@ def preprocessing(path, arguments):
             if arguments['--codec'] == 'x265' or 'H.265' in Path(path).name:
                 arguments['--codec'] = 'h.265 Remux'
 
-    if 'AMZN' in Path(path).name:
-        arguments['--special-edition'] = 'Amazon'
+    if arguments['--type'] == 'Movies':
+        if 'AMZN' in Path(path).name:
+            arguments['--special-edition'] = 'Amazon'
 
-    if 'Netflix' or '.NF.' in Path(path).name:
-        arguments['--special-edition'] = 'Netflix'
+        if 'Netflix' or '.NF.' in Path(path).name:
+            arguments['--special-edition'] = 'Netflix'
 
     assert arguments['--type'] in types
     assert arguments['--codec'] in codecs
@@ -179,22 +181,32 @@ def create_upload_form(arguments):
         form['user'] = (None, 'on')
     if arguments['--special-edition']:
         form['remaster'] = (None, 'on')
-        form['remaster_title'] = (None, arguments['--special-edition'])
         if arguments['--special-edition'] not in known_editions:
+            form['othereditions'] = (None, arguments['--special-edition'])
             form['unknown'] = (None, 'on')
+        else:
+            form['remaster_title'] = (None, arguments['--special-edition'])
 
     pickle.dump(form, open(arguments['<output_form>'], 'wb'))
     return form
 
 
+def upload_command(arguments):
+    assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
+    assert Path(arguments['<input_form>']).exists() and not Path(arguments['<input_form>']).is_dir()
+    r = upload_form(arguments, pickle.load(open(arguments['<input_form>'], 'rb')))
+    if r.status_code == 200:
+        if arguments['--delete-upon-success']:
+            Path.unlink(arguments['<input_form>'])
+    return r.url
+
+
 def upload_form(arguments, form):
     cj = http.cookiejar.MozillaCookieJar(arguments['--cookies'])
     cj.load()
-    r = requests.post("https://awesome-hd.me/upload.php",
-                      cookies=requests.utils.dict_from_cookiejar(cj),
-                      files=form)
-    if r.status_code == 200:
-        return r.url
+    return requests.post("https://awesome-hd.me/upload.php",
+                         cookies=requests.utils.dict_from_cookiejar(cj),
+                         files=form)
 
 
 if __name__ == '__main__':
@@ -202,6 +214,4 @@ if __name__ == '__main__':
     if arguments['prepare']:
         print(create_upload_form(arguments))
     if arguments['upload']:
-        assert Path(arguments['--cookies']).exists() and not Path(arguments['--cookies']).is_dir()
-        assert Path(arguments['<input_form>']).exists() and not Path(arguments['<input_form>']).is_dir()
-        print(upload_form(arguments, pickle.load(open(arguments['<input_form>'], 'rb'))))
+        print(upload_command(arguments))
