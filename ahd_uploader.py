@@ -98,9 +98,6 @@ def autodetect_group(path):
 def preprocessing(path, arguments):
     assert Path(path).exists()
 
-    if arguments['prepare']:
-        assert Path(arguments['<output_form>']).exists() and not Path(arguments['<output_form>']).is_dir()
-
     if arguments['--type'] == 'AUTO-DETECT':
         arguments['--type'] = autodetect_type(path)
 
