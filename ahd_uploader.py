@@ -30,7 +30,7 @@ Options:
 
   <input_form>     Path to previously prepared upload_form to upload.
   --cookies=<cookie_file>   Path to file containing cookies in the standard Netscape format, used to log in to AHD.
-  --delete-on-success   If set, will delete the form file if uploading is succcessful.
+  --delete-on-success   If set, will try to delete the form file if uploading is succcessful.
 
   <media>    Path to file or directory to create a torrent out of.
   <output_form>    Path to save the resulting serialized upload form, which may then be uploaded.
@@ -250,8 +250,11 @@ def upload_command(arguments):
     assert Path(arguments['<input_form>']).exists() and not Path(arguments['<input_form>']).is_dir()
     r = upload_form(arguments, pickle.load(open(arguments['<input_form>'], 'rb')))
     if r.status_code == 200:
-        if arguments['--delete-upon-success']:
-            Path.unlink(arguments['<input_form>'])
+        try:
+            if arguments['--delete-on-success']:
+                Path(arguments['<input_form>']).unlink()
+        except:
+            pass
     else:
         raise RuntimeError("Something went wrong while uploading! It's recommended to check AHD to verify that you"
                            "haven't uploaded a malformed or incorrect torrent.")
