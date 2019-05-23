@@ -139,7 +139,7 @@ def preprocessing(path, arguments):
     arguments['--num-screens'] = int(arguments['--num-screens'])
 
 
-def create_torrent(path, passkey):
+def create_torrent(path):
     torrent_name = Path(path).stem
     if Path(path).is_dir():
         torrent_name = Path(path).name
@@ -212,7 +212,7 @@ def create_upload_form(arguments):
 
     preprocessing(path, arguments)
 
-    torrent_path = create_torrent(path, passkey)
+    torrent_path = create_torrent(path)
 
     form = {'submit': (None, 'true'),
             'file_input': (Path(torrent_path).name, open(torrent_path, 'rb').read()),
