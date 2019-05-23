@@ -1,2 +1,4 @@
 docopt
 requests
+requests_html
+pendulum
