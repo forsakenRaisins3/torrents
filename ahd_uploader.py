@@ -12,7 +12,8 @@ currently provided.
 Upon finishing the preparation, the form may be uploaded. Uploading currently requires a cookies file, as logging in on
 your behalf is made difficult by a captcha. The cookies file is expected to be in the standard Netscape format
 (as used by wget, curl, etc.) and may be extracted from your browser using various extensions.
-If uploading is successful, the command returns a URL to the media page.
+If uploading is successful, the command should output a direct link to the torrent file from AHD; if that doesn't work,
+it will output a URL to the media page.
 
 The author of this script is not a member of staff and provides no guarantee that usage of the script will not lead
 to violation of site rules either directly or indirectly.
@@ -55,14 +56,16 @@ Options:
 """
 
 import http.cookiejar
+import pickle
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-import pickle
-import shutil
 
+import pendulum
 import requests
 from docopt import docopt
+from requests_html import HTML
 
 known_editions = ["Director's Cut", "Unrated", "Extended Edition", "2 in 1", "The Criterion Collection"]
 types = ['Movies', 'TV-Shows']
@@ -206,6 +209,32 @@ def get_release_desc(path, passkey, num_screens):
     return "".join([f['bbcode'] for f in js['files']])
 
 
+def get_torrent_link_from_html(html):
+    """Uses somewhat flimsy HTML parsing due to apparent lack of other options.
+
+    Args:
+        html (str): string representing html of upload response.
+
+    Returns:
+        str: (hopefully) direct link to torrent.
+
+    """
+
+    html = HTML(html=html)
+    user_id = html.search('var userid = {};')[0]
+    authkey = html.search('var authkey = "{}";')[0]
+    passkey = html.search("passkey={}&")[0]
+    user_torrents = [t for t in html.find('[id^=torrent_]') if t.search('user.php?id={}"')[0] == user_id]
+    user_torrents_ids_and_dates = [(t.attrs['id'].split('_')[1], pendulum.from_format(t.find('span')[0].attrs['title'],
+                                                                                      'MMM DD YYYY, HH:mm')) for t in
+                                   user_torrents]
+    torrent_id, torrent_dt = max(user_torrents_ids_and_dates, key=lambda x: x[1])
+    assert (pendulum.now() - torrent_dt).in_minutes() < 2
+    return "https://awesome-hd.me/torrents.php?action=download&id={}&authkey={}&torrent_pass={}".format(torrent_id,
+                                                                                                        authkey,
+                                                                                                        passkey)
+
+
 def create_upload_form(arguments):
     path = arguments['<media>']
     passkey = arguments['--passkey']
@@ -257,7 +286,10 @@ def upload_command(arguments):
     else:
         raise RuntimeError("Something went wrong while uploading! It's recommended to check AHD to verify that you"
                            "haven't uploaded a malformed or incorrect torrent.")
-    return r.url
+    try:
+        return get_torrent_link_from_html(r.text)
+    except:
+        return r.url
 
 
 def upload_form(arguments, form):
@@ -269,7 +301,7 @@ def upload_form(arguments, form):
 
 
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='CLI AHD Uploader 1.0')
+    arguments = docopt(__doc__, version='CLI AHD Uploader 1.1')
     if arguments['prepare']:
         create_upload_form(arguments)
     if arguments['upload']:
