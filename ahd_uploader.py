@@ -128,7 +128,7 @@ def preprocessing(path, arguments):
         if 'AMZN' in Path(path).name:
             arguments['--special-edition'] = 'Amazon'
 
-        if 'Netflix' or '.NF.' in Path(path).name:
+        if 'Netflix' in Path(path).name or '.NF.' in Path(path).name:
             arguments['--special-edition'] = 'Netflix'
 
     assert arguments['--type'] in types
@@ -140,14 +140,13 @@ def preprocessing(path, arguments):
 
 
 def create_torrent(path, passkey):
-    announce_url = "http://moose.awesome-hd.me/{}/announce".format(passkey)
     torrent_name = Path(path).stem
     if Path(path).is_dir():
         torrent_name = Path(path).name
     torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(torrent_name))
     if torrent_path.exists():
         torrent_path.unlink()
-    p = subprocess.run(['mktorrent', '-l', '22', '-p', '-a', announce_url, '-o', str(torrent_path), str(path)],
+    p = subprocess.run(['mktorrent', '-l', '23', '-p', '-o', str(torrent_path), str(path)],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if p.returncode != 0:
         raise RuntimeError("Error creating torrent: {}".format(p.stdout))
