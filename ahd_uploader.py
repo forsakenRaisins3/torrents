@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 """NOTE: READ DOCUMENTATION BEFORE USAGE.
 
 CLI uploader for AHD.
@@ -6,8 +8,9 @@ Usage generally follows two steps: the preparation of an upload form, and subseq
 Preparation involves the creation of a torrent and the filling out of the associated information in AHD's upload form,
 including mediainfo and screenshots. Basic functionality for automatically detecting some other info
 (group, codec, etc.) is provided but not recommended. The result of this step is a serialized Python dictionary
-representing a completed upload form. Advanced users may inspect and/or edit this form, but such functionality is not
-currently provided.
+representing a completed upload form.
+You may also examine the prepared form before uploading using this tool.
+Advanced users could edit this form in Python, but such functionality is not currently provided.
 
 Upon finishing the preparation, the form may be uploaded. Uploading currently requires a cookies file, as logging in on
 your behalf is made difficult by a captcha. The cookies file is expected to be in the standard Netscape format
@@ -20,18 +23,16 @@ to violation of site rules either directly or indirectly.
 
 Usage:
     ahd_uploader.py (-h | --help)
-    ahd_uploader.py upload <input_form> --cookies=<cookie_file> --delete-on-success
     ahd_uploader.py prepare <media> <output_form> --imdb=<imdb> --passkey=<passkey>
         [--media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
         [--user-release --special-edition=<edition_information>]
         [--num-screens=<num_screens>]
+    ahd_uploader.py examine <input_form>
+    ahd_uploader.py upload <input_form> --cookies=<cookie_file> [--delete-on-success]
 
 Options:
   -h --help     Show this screen.
 
-  <input_form>     Path to previously prepared upload_form to upload.
-  --cookies=<cookie_file>   Path to file containing cookies in the standard Netscape format, used to log in to AHD.
-  --delete-on-success   If set, will try to delete the form file if uploading is succcessful.
 
   <media>    Path to file or directory to create a torrent out of.
   <output_form>    Path to save the resulting serialized upload form, which may then be uploaded.
@@ -53,6 +54,11 @@ Options:
 
   --num-screens=<num_screens>   Number of screenshots to upload and include in description [default: 4]
 
+
+  <input_form>     Path to previously prepared upload form to examine or upload.
+  --cookies=<cookie_file>   Path to file containing cookies in the standard Netscape format, used to log in to AHD.
+  --delete-on-success   If set, will try to delete the form file if uploading is succcessful.
+
 """
 
 import http.cookiejar
@@ -61,6 +67,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from pprint import pprint
 
 import pendulum
 import requests
@@ -80,31 +87,34 @@ def autodetect_type(path):
 
 
 def autodetect_media_type(path):
-    if Path(path).is_dir():
-        path = next(Path(path).glob('*/')).as_posix()
-    if 'UHD.BluRay' in Path(path).name:
+    path = Path(path)
+    if path.is_dir():
+        path = next(path.glob('*/'))
+    if 'UHD.BluRay' in path.name:
         return 'UHD Blu-ray'
-    if 'BluRay' in Path(path).name:
+    if 'BluRay' in path.name:
         return 'Blu-ray'
     for m in media_types:
-        if m in Path(path).name:
+        if m in path.name:
             return m
     raise RuntimeError("Unable to detect media type")
 
 
 def autodetect_codec(path):
-    if Path(path).is_dir():
-        path = next(Path(path).glob('*/')).as_posix()
+    path = Path(path)
+    if path.is_dir():
+        path = next(path.glob('*/'))
     for c in codecs:
-        if c in Path(path).name:
+        if c in path.name:
             return c
     return ""
 
 
 def autodetect_group(path):
-    if Path(path).is_dir():
-        path = next(Path(path).glob('*/')).as_posix()
-    return Path(path).stem.split('-')[-1]
+    path = Path(path)
+    if path.is_dir():
+        path = next(path.glob('*/'))
+    return path.stem.split('-')[-1]
 
 
 def preprocessing(path, arguments):
@@ -205,7 +215,7 @@ def get_release_desc(path, passkey, num_screens):
         path = next(Path(path).glob('*/')).as_posix()
     js = upload_screenshots(Path(path).name, take_screenshots(path, num_screens), passkey)
     if 'files' not in js:
-        ValueError('Error uploading screenshots.')
+        raise ValueError('Error uploading screenshots.')
     return "".join([f['bbcode'] for f in js['files']])
 
 
@@ -300,9 +310,18 @@ def upload_form(arguments, form):
                          files=form)
 
 
+def examine_form(form):
+    form = {k: v[1] for k,v in form.items()}
+    form['file_input'] = "<torrent_content>"
+    return form
+
+
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='CLI AHD Uploader 1.1')
+    arguments = docopt(__doc__, version='CLI AHD Uploader 1.2')
     if arguments['prepare']:
         create_upload_form(arguments)
     if arguments['upload']:
         print(upload_command(arguments))
+    if arguments['examine']:
+        with open(arguments['<input_form>'], 'rb') as form:
+            pprint(examine_form(pickle.load(form)))
