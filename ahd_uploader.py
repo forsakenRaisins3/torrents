@@ -27,6 +27,7 @@ Usage:
         [--media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
         [--user-release --special-edition=<edition_information>]
         [--num-screens=<num_screens>]
+        [--overwrite-existing-torrent]
     ahd_uploader.py examine <input_form>
     ahd_uploader.py upload <input_form> --cookies=<cookie_file> [--delete-on-success]
 
@@ -53,6 +54,7 @@ Options:
                                             (https://awesome-hd.me/wiki.php?action=article&id=30).
 
   --num-screens=<num_screens>   Number of screenshots to upload and include in description [default: 4]
+  --overwrite-existing-torrent  By default, if a torrent exists in the expected path, it is used. Use to overwrite.
 
 
   <input_form>     Path to previously prepared upload form to examine or upload.
@@ -152,12 +154,14 @@ def preprocessing(path, arguments):
     arguments['--num-screens'] = int(arguments['--num-screens'])
 
 
-def create_torrent(path):
+def create_torrent(path, overwrite=False):
     torrent_name = Path(path).stem
     if Path(path).is_dir():
         torrent_name = Path(path).name
     torrent_path = Path(tempfile.gettempdir()) / ("{}.torrent".format(torrent_name))
     if torrent_path.exists():
+        if not overwrite:
+            return torrent_path
         torrent_path.unlink()
     p = subprocess.run(['mktorrent', '-l', '23', '-p', '-o', str(torrent_path), str(path)],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -179,18 +183,19 @@ def get_duration(file):
     if p.returncode == 127:
         raise ValueError('ffprobe is not installed or not in path.')
     if p.returncode != 0:
-        return RuntimeError('Error occurred while running ffprobe.')
+        raise RuntimeError('Error occurred while running ffprobe.')
     return float(p.stdout.decode('utf-8'))
 
 
 def take_screenshot(file, offset_secs, output_dir):
     screenshot_path = Path(output_dir) / ("{}_{}.png".format(Path(file).stem, offset_secs))
-    p = subprocess.run(['ffmpeg', '-ss', str(offset_secs), '-i', str(file), '-vframes', '1', str(screenshot_path)],
+    ffmpeg_cmd = ['ffmpeg', '-ss', str(offset_secs), '-i', str(file), '-vframes', '1', str(screenshot_path)]
+    p = subprocess.run(ffmpeg_cmd,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if p.returncode == 127:
         raise ValueError('ffmpeg is not installed or not in path.')
     if p.returncode != 0:
-        return RuntimeError('Error occurred while running ffmpeg.')
+        raise RuntimeError('Error occurred while running the ffmpeg command: {}'.format(" ".join(ffmpeg_cmd)))
     return screenshot_path
 
 
@@ -207,16 +212,18 @@ def take_screenshots(file, num_screens):
 def upload_screenshots(gallery_title, files, key):
     data_payload = {'apikey': key, 'galleryid': 'new', 'gallerytitle': gallery_title}
     files_payload = [('image[]', (Path(f).name, open(f, 'rb'))) for f in files]
-    return requests.post('https://img.awesome-hd.me/api/upload', data=data_payload, files=files_payload).json()
+    return requests.post('https://img.awesome-hd.me/api/upload', data=data_payload, files=files_payload)
 
 
 def get_release_desc(path, passkey, num_screens):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
-    js = upload_screenshots(Path(path).name, take_screenshots(path, num_screens), passkey)
-    if 'files' not in js:
-        raise ValueError('Error uploading screenshots.')
-    return "".join([f['bbcode'] for f in js['files']])
+    r = upload_screenshots(Path(path).name, take_screenshots(path, num_screens), passkey)
+    try:
+        response_files = r.json()['files']
+    except Exception as e:
+        raise ValueError("Error uploading screenshots: {}. Upload request text: {}".format(e, r.text)) from None
+    return "".join([f['bbcode'] for f in response_files])
 
 
 def get_torrent_link_from_html(html):
@@ -251,7 +258,7 @@ def create_upload_form(arguments):
 
     preprocessing(path, arguments)
 
-    torrent_path = create_torrent(path)
+    torrent_path = create_torrent(path, overwrite=arguments['--overwrite-existing-torrent'])
 
     form = {'submit': (None, 'true'),
             'file_input': (Path(torrent_path).name, open(torrent_path, 'rb').read()),
@@ -311,7 +318,7 @@ def upload_form(arguments, form):
 
 
 def examine_form(form):
-    form = {k: v[1] for k,v in form.items()}
+    form = {k: v[1] for k, v in form.items()}
     form['file_input'] = "<torrent_content>"
     return form
 
