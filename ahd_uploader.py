@@ -89,6 +89,9 @@ def get_imdb_info(guessit_info):
     q = g['title']
     if 'year' in g:
         q = "{} {}".format(q, g['year'])
+    results = IMDb().search_movie(q)
+    if len(results) == 0:
+        raise RuntimeError("Unable to identify IMDb ID, please specify one manually.")
     return IMDb().search_movie(q)[0]
 
 
@@ -109,10 +112,12 @@ def autodetect_type(path, imdb_info):
         imdb_info = get_imdb_info(g)
     if imdb_info['kind'] == 'tv series':
         return 'TV-Shows', imdb_info
-    if 'certificates' not in imdb_info:
-        IMDb().update(imdb_info)
-    if any((c.startswith('United States:TV') for c in imdb_info['certificates'])):
-        return 'TV-Shows', imdb_info
+    try:
+        html = HTML(html=requests.get("https://www.imdb.com/title/tt{}".format(imdb_info.movieID)).text)
+        if 'TV Special' in html.find('.subtext')[0].html:
+            return 'TV-Shows', imdb_info
+    except:
+        pass
     return 'Movies', imdb_info
 
 
