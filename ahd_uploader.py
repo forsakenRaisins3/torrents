@@ -23,8 +23,8 @@ to violation of site rules either directly or indirectly.
 
 Usage:
     ahd_uploader.py (-h | --help)
-    ahd_uploader.py prepare <media> <output_form> --imdb=<imdb> --passkey=<passkey>
-        [--media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
+    ahd_uploader.py prepare <media> <output_form> --passkey=<passkey>
+        [--imdb=<imdb> --media-type=<media_type> --type=<type> --group=<group> --codec=<codec>]
         [--user-release --special-edition=<edition_information>]
         [--num-screens=<num_screens>]
         [--overwrite-existing-torrent]
@@ -37,9 +37,9 @@ Options:
 
   <media>    Path to file or directory to create a torrent out of.
   <output_form>    Path to save the resulting serialized upload form, which may then be uploaded.
-  --imdb=<imdb>    IMDb ID, not the full link. Example IMDb ID: tt0113243.
   --passkey=<passkey>   Your AHD passkey (which is the same as your AIMG API key).
 
+  --imdb=<imdb>    IMDb ID, not the full link, e.g tt0113243 [default: AUTO-DETECT].
   --type=<type>  Type of content, must be one of Movies, TV-Shows [default: AUTO-DETECT].
   --media-type=<media_type>  Type of media source, must be one of
                              Blu-ray, HD-DVD, HDTV, WEB-DL, WEBRip, DTheater, XDCAM, UHD Blu-ray
@@ -74,56 +74,86 @@ from pprint import pprint
 import pendulum
 import requests
 from docopt import docopt
+from guessit import guessit
+from imdb import IMDb
 from requests_html import HTML
 
-known_editions = ["Director's Cut", "Unrated", "Extended Edition", "2 in 1", "The Criterion Collection"]
-types = ['Movies', 'TV-Shows']
-media_types = ['Blu-ray', 'HD-DVD', 'HDTV', 'WEB-DL', 'WEBRip', 'DTheater', 'XDCAM', 'UHD Blu-ray']
-codecs = ['x264', 'VC-1 Remux', 'h.264 Remux', 'MPEG2 Remux', 'h.265 Remux', 'x265']
+KNOWN_EDITIONS = ["Director's Cut", "Unrated", "Extended Edition", "2 in 1", "The Criterion Collection"]
+TYPES = ['Movies', 'TV-Shows']
+MEDIA_TYPES = ['Blu-ray', 'HD-DVD', 'HDTV', 'WEB-DL', 'WEBRip', 'DTheater', 'XDCAM', 'UHD Blu-ray']
+CODECS = ['x264', 'VC-1 Remux', 'h.264 Remux', 'MPEG2 Remux', 'h.265 Remux', 'x265']
 
 
-def autodetect_type(path):
-    if '.S0' in Path(path).name:
-        return 'TV-Shows'
-    return 'Movies'
+def get_imdb_info(guessit_info):
+    g = guessit_info
+    q = g['title']
+    if 'year' in g:
+        q = "{} {}".format(q, g['year'])
+    return IMDb().search_movie(q)[0]
+
+
+def autodetect_imdb(path, imdb_info):
+    name = Path(path).name
+    g = guessit(name)
+    if not imdb_info:
+        imdb_info = get_imdb_info(g)
+    return "tt{}".format(imdb_info.movieID), imdb_info
+
+
+def autodetect_type(path, imdb_info):
+    name = Path(path).name
+    g = guessit(name)
+    if 'season' in g:
+        return 'TV-Shows', imdb_info
+    if not imdb_info:
+        imdb_info = get_imdb_info(g)
+    if imdb_info['kind'] == 'tv series':
+        return 'TV-Shows', imdb_info
+    if 'certificates' not in imdb_info:
+        IMDb().update(imdb_info)
+    if any((c.startswith('United States:TV') for c in imdb_info['certificates'])):
+        return 'TV-Shows', imdb_info
+    return 'Movies', imdb_info
 
 
 def autodetect_media_type(path):
     path = Path(path)
-    if path.is_dir():
-        path = next(path.glob('*/'))
     if 'UHD.BluRay' in path.name:
         return 'UHD Blu-ray'
     if 'BluRay' in path.name:
         return 'Blu-ray'
-    for m in media_types:
+    for m in MEDIA_TYPES:
         if m in path.name:
             return m
     raise RuntimeError("Unable to detect media type")
 
 
 def autodetect_codec(path):
-    path = Path(path)
-    if path.is_dir():
-        path = next(path.glob('*/'))
-    for c in codecs:
-        if c in path.name:
+    name = Path(path).name
+    if 'AVC' in name and 'Remux' in name:
+        return 'h.264 Remux'
+    for c in CODECS:
+        if c in name:
             return c
     return ""
 
 
 def autodetect_group(path):
-    path = Path(path)
-    if path.is_dir():
-        path = next(path.glob('*/'))
-    return path.stem.split('-')[-1]
+    g = guessit(Path(path).name)
+    if 'release_group' in g:
+        return g['release_group']
+    return 'UNKNOWN'
 
 
 def preprocessing(path, arguments):
     assert Path(path).exists()
+    imdb_info = None
+
+    if arguments['--imdb'] == 'AUTO-DETECT':
+        arguments['--imdb'], imdb_info = autodetect_imdb(path, imdb_info)
 
     if arguments['--type'] == 'AUTO-DETECT':
-        arguments['--type'] = autodetect_type(path)
+        arguments['--type'], imdb_info = autodetect_type(path, imdb_info)
 
     if arguments['--group'] == 'AUTO-DETECT':
         arguments['--group'] = autodetect_group(path)
@@ -146,9 +176,9 @@ def preprocessing(path, arguments):
         if 'Netflix' in Path(path).name or '.NF.' in Path(path).name:
             arguments['--special-edition'] = 'Netflix'
 
-    assert arguments['--type'] in types
-    assert arguments['--codec'] in codecs
-    assert arguments['--media-type'] in media_types
+    assert arguments['--type'] in TYPES
+    assert arguments['--codec'] in CODECS
+    assert arguments['--media-type'] in MEDIA_TYPES
 
     assert int(arguments['--num-screens'])
     arguments['--num-screens'] = int(arguments['--num-screens'])
@@ -280,7 +310,7 @@ def create_upload_form(arguments):
         form['user'] = (None, 'on')
     if arguments['--special-edition']:
         form['remaster'] = (None, 'on')
-        if arguments['--special-edition'] not in known_editions:
+        if arguments['--special-edition'] not in KNOWN_EDITIONS:
             form['othereditions'] = (None, arguments['--special-edition'])
             form['unknown'] = (None, 'on')
         else:

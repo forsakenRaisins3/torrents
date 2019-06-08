@@ -2,3 +2,5 @@ docopt
 requests
 requests_html
 pendulum
+guessit
+imdbpy
