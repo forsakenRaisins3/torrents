@@ -77,6 +77,7 @@ from docopt import docopt
 from guessit import guessit
 from imdb import IMDb
 from requests_html import HTML
+import os
 
 KNOWN_EDITIONS = ["Director's Cut", "Unrated", "Extended Edition", "2 in 1", "The Criterion Collection"]
 TYPES = ['Movies', 'TV-Shows']
@@ -207,7 +208,7 @@ def create_torrent(path, overwrite=False):
 
 def get_mediainfo(path):
     if Path(path).is_dir():
-        path = next(Path(path).glob('*/')).as_posix()
+        path = next(Path(path).glob('*/'))
     return subprocess.check_output(['mediainfo', path])
 
 
@@ -231,7 +232,8 @@ def take_screenshot(file, offset_secs, output_dir):
         raise ValueError('ffmpeg is not installed or not in path.')
     if p.returncode != 0:
         raise RuntimeError('Error occurred while running the ffmpeg command: {}'.format(" ".join(ffmpeg_cmd)))
-    return screenshot_path
+    
+    
 
 
 def take_screenshots(file, num_screens):
@@ -241,24 +243,35 @@ def take_screenshots(file, num_screens):
         shutil.rmtree(output_dir.resolve())
     Path.mkdir(output_dir)
     offsets = [int(1 / (num_screens + 1) * o * duration) for o in range(1, num_screens + 1)]
-    return [take_screenshot(file, offset, output_dir) for offset in offsets]
+    [take_screenshot(file, offset, output_dir) for offset in offsets]
+    return str(output_dir)
 
 
-def upload_screenshots(gallery_title, files, key):
-    data_payload = {'apikey': key, 'galleryid': 'new', 'gallerytitle': gallery_title}
-    files_payload = [('image[]', (Path(f).name, open(f, 'rb'))) for f in files]
-    return requests.post('https://img.awesome-hd.me/api/upload', data=data_payload, files=files_payload)
+# def upload_screenshots(gallery_title, files, key):
+    # data_payload = {'apikey': key, 'galleryid': 'new', 'gallerytitle': gallery_title}
+    # files_payload = [('image[]', (Path(f).name, open(f, 'rb'))) for f in files]
+    # return requests.post('https://img.awesome-hd.me/api/upload', data=data_payload, files=files_payload)
 
 
 def get_release_desc(path, passkey, num_screens):
     if Path(path).is_dir():
         path = next(Path(path).glob('*/')).as_posix()
-    r = upload_screenshots(Path(path).name, take_screenshots(path, num_screens), passkey)
-    try:
-        response_files = r.json()['files']
-    except Exception as e:
-        raise ValueError("Error uploading screenshots: {}. Upload request text: {}".format(e, r.text)) from None
-    return "".join([f['bbcode'] for f in response_files])
+    gallery_title=Path(path).name
+    imgtemp=''.join(take_screenshots(path, num_screens))
+    release_info_string=""
+    data_payload = {'apikey': passkey, 'galleryid': 'new', 'gallerytitle': gallery_title}
+    for filename in os.listdir(imgtemp):
+        filename=imgtemp+'/'+filename
+        files_payload = [('image[]', open(filename, 'rb'))] 
+        imagepost=requests.post('https://img.awesome-hd.me/api/upload', data=data_payload, files=files_payload)
+        try:
+            response_files = imagepost.json()['files']
+        except Exception as e:
+            raise ValueError("Error uploading screenshots: {}. Upload request text: {}".format(e, imagepost.text)) from None
+        bbcode="".join([f['bbcode'] for f in response_files])
+        release_info_string=release_info_string+""+str(bbcode)
+    return release_info_string
+    
 
 
 def get_torrent_link_from_html(html):
