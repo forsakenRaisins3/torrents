@@ -1,4 +1,4 @@
-#! /usr/bin/env python32
+#! /usr/bin/env python3
 
 """NOTE: READ DOCUMENTATION BEFORE USAGE.
 
